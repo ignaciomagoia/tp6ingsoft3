@@ -119,6 +119,9 @@ func main() {
 	r.DELETE("/todos/:id", deleteTodo)
 	r.DELETE("/todos", clearTodos)
 
+	r.GET("/healthz", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{"status": "ok"})
+	})
 	// Iniciar servidor
 	r.Run(":8080")
 }
@@ -226,7 +229,7 @@ func listTodos(c *gin.Context) {
 	email := c.Query("email")
 	filter := bson.M{}
 	if email != "" {
-		filter["email"] = normalizeEmail(email)
+		filter["email"] = email
 	}
 	cursor, err := todoCollection.Find(context.TODO(), filter)
 	if err != nil {
@@ -254,7 +257,7 @@ func createTodo(c *gin.Context) {
 		Email string `json:"email"`
 		Title string `json:"title"`
 	}
-	if err := c.BindJSON(&input); err != nil {
+	if err := c.BindJSON(&input); err != nil || input.Email == "" || input.Title == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Datos inválidos"})
 		return
 	}
@@ -270,7 +273,7 @@ func createTodo(c *gin.Context) {
 		Email:     input.Email,
 		Title:     input.Title,
 		Completed: false,
-		CreatedAt: time.Now().UTC(),
+		CreatedAt: time.Now(),
 	}
 	res, err := todoCollection.InsertOne(context.TODO(), todo)
 	if err != nil {
@@ -302,12 +305,7 @@ func updateTodo(c *gin.Context) {
 
 	update := bson.M{}
 	if input.Title != nil {
-		title := normalizeText(*input.Title)
-		if title == "" {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "El título no puede estar vacío"})
-			return
-		}
-		update["title"] = title
+		update["title"] = *input.Title
 	}
 	if input.Completed != nil {
 		update["completed"] = *input.Completed
