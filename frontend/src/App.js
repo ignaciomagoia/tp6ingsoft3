@@ -1,303 +1,177 @@
-import React, { useState, useEffect, useCallback } from "react";
-import axios from "axios";
+import React, { useCallback, useEffect, useState } from "react";
 import "./App.css";
+import RegisterForm from "./components/RegisterForm";
+import TodoForm from "./components/TodoForm";
+import TodoList from "./components/TodoList";
+import Toast from "./components/Toast";
+import {
+  registerUser,
+  loginUser,
+  getTodos,
+  createTodo,
+  updateTodo,
+  deleteTodo,
+} from "./services/api";
 
-const API_URL = "http://localhost:8080";
+const emptyToast = { message: "", type: "info" };
 
 function App() {
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
-  const [message, setMessage] = useState("");
-  const [messageType, setMessageType] = useState("info");
-
+  const [currentUser, setCurrentUser] = useState("");
   const [todos, setTodos] = useState([]);
-  const [newTodo, setNewTodo] = useState("");
-  const [authEmail, setAuthEmail] = useState("");
+  const [isLoadingTodos, setIsLoadingTodos] = useState(false);
+  const [toast, setToast] = useState(emptyToast);
 
-  const normalizeEmail = useCallback(
-    (value) => value.trim().toLowerCase(),
-    []
+  const showToast = useCallback((message, type = "info") => {
+    setToast({ message, type });
+  }, []);
+
+  const clearToast = useCallback(() => {
+    setToast(emptyToast);
+  }, []);
+
+  const loadTodos = useCallback(
+    async (email) => {
+      if (!email) {
+        setTodos([]);
+        return;
+      }
+      setIsLoadingTodos(true);
+      try {
+        const response = await getTodos(email);
+        setTodos(response.todos ?? []);
+      } catch (error) {
+        showToast(error.message, "error");
+      } finally {
+        setIsLoadingTodos(false);
+      }
+    },
+    [showToast]
   );
 
-  const showStatus = useCallback((text, type = "info") => {
-    setMessage(text);
-    setMessageType(type);
-  }, []);
+  useEffect(() => {
+    loadTodos(currentUser);
+  }, [currentUser, loadTodos]);
 
-  const clearStatus = useCallback(() => {
-    setMessage("");
-    setMessageType("info");
-  }, []);
+  const handleAuthSuccess = useCallback(
+    (email, message) => {
+      setCurrentUser(email);
+      showToast(message ?? "Sesión iniciada", "success");
+    },
+    [showToast]
+  );
 
-  const handleLogin = async () => {
+  const handleRegister = async ({ email, password }) => {
     try {
-      const normalizedEmail = normalizeEmail(email);
-      const res = await axios.post(`${API_URL}/login`, {
-        email: normalizedEmail,
-        password,
-      });
-      if (res.status === 200) {
-        setEmail(normalizedEmail);
-        setAuthEmail(normalizedEmail);
-        setIsLoggedIn(true);
-        showStatus(
-          res.data?.message ?? "✅ Sesión iniciada correctamente",
-          "success"
-        );
-      }
-    } catch (err) {
-      const errorMessage =
-        err.response?.data?.error ?? "❌ Error al iniciar sesión";
-      showStatus(errorMessage, "error");
+      const response = await registerUser({ email, password });
+      handleAuthSuccess(email, response.message ?? "Usuario registrado correctamente");
+    } catch (error) {
+      showToast(error.message, "error");
+      throw error;
     }
   };
 
-  const handleRegister = async () => {
+  const handleLogin = async ({ email, password }) => {
     try {
-      const normalizedEmail = normalizeEmail(email);
-      const res = await axios.post(`${API_URL}/register`, {
-        email: normalizedEmail,
-        password,
-      });
-      if (res.status === 200 || res.status === 201) {
-        setEmail(normalizedEmail);
-        showStatus(
-          res.data?.message ?? "✅ Usuario registrado. Ahora iniciá sesión.",
-          "success"
-        );
-      }
-    } catch (err) {
-      const errorMessage =
-        err.response?.data?.error ?? "❌ Error al registrar usuario";
-      showStatus(errorMessage, "error");
-    }
-  };
-
-  const fetchTodos = useCallback(async () => {
-    if (!authEmail) {
-      setTodos([]);
-      clearStatus();
-      return true;
-    }
-    try {
-      const res = await axios.get(`${API_URL}/todos`, {
-        params: { email: authEmail },
-      });
-      setTodos(res.data?.todos ?? []);
-      return true;
-    } catch (err) {
-      const errorMessage =
-        err.response?.data?.error ?? "❌ Error al obtener tareas";
-      showStatus(errorMessage, "error");
-      return false;
-    }
-  }, [authEmail, clearStatus, showStatus]);
-
-  const addTodo = async () => {
-    if (!isLoggedIn) {
-      showStatus("⚠️ Iniciá sesión antes de agregar tareas", "warning");
-      return;
-    }
-    if (!newTodo.trim()) return;
-    if (!authEmail) {
-      showStatus("❌ No se encontró el usuario autenticado", "error");
-      return;
-    }
-
-    try {
-      const res = await axios.post(`${API_URL}/todos`, {
-        email: authEmail,
-        title: newTodo,
-      });
-      const createdTodo = res.data?.todo;
-      if (createdTodo) {
-        setTodos([...todos, createdTodo]);
-      }
-      const refreshed = await fetchTodos();
-      setNewTodo("");
-      if (refreshed) {
-        showStatus("✅ Tarea agregada", "success");
-      }
-    } catch (err) {
-      const errorMessage =
-        err.response?.data?.error ?? "❌ Error al agregar tarea";
-      showStatus(errorMessage, "error");
-    }
-  };
-
-  const toggleTodo = async (id, completed) => {
-    try {
-      const res = await axios.put(`${API_URL}/todos/${id}`, {
-        completed: !completed,
-      });
-      const updatedTodo = res.data?.todo;
-      setTodos(
-        todos.map((t) =>
-          t.id === id
-            ? updatedTodo ?? { ...t, completed: !t.completed }
-            : t
-        )
-      );
-    } catch (err) {
-      const errorMessage =
-        err.response?.data?.error ?? "❌ Error al actualizar tarea";
-      showStatus(errorMessage, "error");
-    }
-  };
-
-  const deleteTodo = async (id) => {
-    try {
-      await axios.delete(`${API_URL}/todos/${id}`);
-      setTodos(todos.filter((t) => t.id !== id));
-      const refreshed = await fetchTodos();
-      if (refreshed) {
-        showStatus("🗑️ Tarea eliminada", "info");
-      }
-    } catch (err) {
-      const errorMessage =
-        err.response?.data?.error ?? "❌ Error al eliminar tarea";
-      showStatus(errorMessage, "error");
+      const response = await loginUser({ email, password });
+      handleAuthSuccess(email, response.message ?? "Inicio de sesión exitoso");
+    } catch (error) {
+      showToast(error.message, "error");
+      throw error;
     }
   };
 
   const handleLogout = () => {
-    setEmail("");
-    setPassword("");
-    setIsLoggedIn(false);
-    setAuthEmail("");
+    setCurrentUser("");
     setTodos([]);
-    showStatus("👋 Sesión cerrada", "info");
+    showToast("Sesión cerrada", "info");
   };
 
-  useEffect(() => {
-    if (isLoggedIn && authEmail) {
-      fetchTodos();
+  const handleCreateTodo = async (title) => {
+    if (!currentUser) {
+      showToast("Debes iniciar sesión para crear tareas", "warning");
+      return;
     }
-  }, [isLoggedIn, authEmail, fetchTodos]);
+
+    try {
+      const response = await createTodo({ email: currentUser, title });
+      const created = response.todo ?? response;
+      setTodos((prev) => [...prev, created]);
+      showToast("Tarea creada", "success");
+    } catch (error) {
+      showToast(error.message, "error");
+    }
+  };
+
+  const handleToggleTodo = async (id, completed) => {
+    try {
+      const response = await updateTodo(id, { completed: !completed });
+      const updated = response.todo ?? response;
+      setTodos((prev) => prev.map((todo) => (todo.id === id ? updated : todo)));
+    } catch (error) {
+      showToast(error.message, "error");
+    }
+  };
+
+  const handleDeleteTodo = async (id) => {
+    try {
+      await deleteTodo(id);
+      setTodos((prev) => prev.filter((todo) => todo.id !== id));
+      showToast("Tarea eliminada", "info");
+    } catch (error) {
+      showToast(error.message, "error");
+    }
+  };
 
   return (
     <div className="app">
-      <div className="app__card">
-        <header className="app__header">
-          <h1>To-Do Planner</h1>
-          <p>
-            Organizá tus pendientes diarios de forma simple y mantené todo bajo
-            control.
-          </p>
-        </header>
+      <header className="app__header">
+        <h1>To-Do List</h1>
+        <p>Gestioná tus tareas pendientes y mantené todo bajo control.</p>
+      </header>
 
-        <section className="section">
-          <h2 className="section__title">Accedé a tu cuenta</h2>
-          <div className="auth-form">
-            <div className="auth-form__inputs">
-              <input
-                type="email"
-                className="input"
-                placeholder="Correo electrónico"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                disabled={isLoggedIn}
-              />
-              <input
-                type="password"
-                className="input"
-                placeholder="Contraseña"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                disabled={isLoggedIn}
-              />
-            </div>
-            <div className="auth-form__actions">
-              <button
-                className="btn btn--outline"
-                onClick={handleRegister}
-                disabled={isLoggedIn}
-              >
-                Registrarse
-              </button>
-              <button
-                className="btn btn--primary"
-                onClick={handleLogin}
-                disabled={isLoggedIn}
-              >
-                Iniciar sesión
-              </button>
-            </div>
-          </div>
-        </section>
+      <main className="app__content">
+        <RegisterForm
+          onRegister={handleRegister}
+          onLogin={handleLogin}
+          disabled={Boolean(currentUser)}
+          defaultEmail={currentUser}
+        />
 
-        {message && (
-          <div className={`status status--${messageType}`}>{message}</div>
-        )}
-
-        {isLoggedIn && (
-          <section className="section todo-section">
-            <div className="todo-section__header">
+        {currentUser ? (
+          <section aria-labelledby="todos-section-title" className="panel todo-panel">
+            <div className="todo-panel__header">
               <div>
-                <h2 className="section__title">Mis tareas</h2>
-                <p className="auth-info">
-                  Sesión iniciada como <strong>{authEmail}</strong>
-                  {todos.length
-                    ? ` · ${todos.length} ${
-                        todos.length === 1 ? "tarea" : "tareas"
-                      }`
-                    : ""}
+                <h2 id="todos-section-title" className="section__title">
+                  Mis tareas
+                </h2>
+                <p className="section__subtitle">
+                  Sesión activa como <strong>{currentUser}</strong>
                 </p>
               </div>
-              <button className="btn btn--secondary" onClick={handleLogout}>
+
+              <button type="button" className="btn btn--outline" onClick={handleLogout}>
                 Cerrar sesión
               </button>
             </div>
 
-            <div className="todo-input">
-              <input
-                type="text"
-                className="input"
-                placeholder="Nueva tarea"
-                value={newTodo}
-                onChange={(e) => setNewTodo(e.target.value)}
-              />
-              <button className="btn btn--primary" onClick={addTodo}>
-                Agregar
-              </button>
-            </div>
+            <TodoForm onAdd={handleCreateTodo} disabled={isLoadingTodos} />
 
-            {todos.length === 0 ? (
-              <p className="todo-empty">
-                Todavía no agregaste tareas. Empezá con la primera ✨
-              </p>
+            {isLoadingTodos ? (
+              <p role="status">Cargando tareas...</p>
             ) : (
-              <ul className="todo-list">
-                {todos.map((t) => (
-                  <li key={t.id} className="todo-item">
-                    <label className="todo-item__body">
-                      <input
-                        type="checkbox"
-                        checked={t.completed}
-                        onChange={() => toggleTodo(t.id, t.completed)}
-                      />
-                      <span
-                        className={`todo-title${
-                          t.completed ? " todo-title--completed" : ""
-                        }`}
-                      >
-                        {t.title}
-                      </span>
-                    </label>
-                    <button
-                      className="btn btn--danger"
-                      onClick={() => deleteTodo(t.id)}
-                    >
-                      Eliminar
-                    </button>
-                  </li>
-                ))}
-              </ul>
+              <TodoList todos={todos} onToggle={handleToggleTodo} onDelete={handleDeleteTodo} />
             )}
           </section>
+        ) : (
+          <section className="panel panel--placeholder">
+            <p className="panel__subtitle">
+              Registrate o iniciá sesión para comenzar a agregar tareas y hacer seguimiento de tus pendientes.
+            </p>
+          </section>
         )}
-      </div>
+      </main>
+
+      <Toast message={toast.message} type={toast.type} onClose={clearToast} />
     </div>
   );
 }
