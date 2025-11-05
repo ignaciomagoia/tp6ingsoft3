@@ -13,8 +13,8 @@ env:
   ARTIFACT_NAME: todo-app
 
   # Web Apps (actualizadas con nombres reales)
-  QA_WEBAPP_NAME: tp06-app-qa-ignaciojulian-euawdtcrafegfceg
-  PROD_WEBAPP_NAME: tp06-app-prod-ignaciojulian-e2bkaugcc5gvgbct
+  QA_WEBAPP_NAME: tp06-app-qa-ignaciojulian
+  PROD_WEBAPP_NAME: tp06-app-prod-ignaciojulian
 
   # URLs para health checks
   QA_BASE_URL: https://tp06-app-qa-ignaciojulian-euawdtcrafegfceg.mexicocentral-01.azurewebsites.net
